@@ -111,8 +111,8 @@ void RangeFusion::_main() {
 */
     float abs_vx = fabs(_vx);
 
-    float gg_vx = abs_vx * 5;
-    float constr_vx = gg_vx < 1 ? 1 : gg_vx > 10 ? 10 : gg_vx;
+    float scaled_vx = abs_vx * 5;
+    float constr_vx = scaled_vx < 1 ? 1 : scaled_vx > 10 ? 10 : scaled_vx;
 
     float current_alt = _vx > 0 ? _dist_point_rect(0, 0, m1, q1) : _dist_point_rect(0, 0, m0, q0);
     float future_alt = (_vx > 0 ? smooth_d_fron : smooth_d_back) / constr_vx;
