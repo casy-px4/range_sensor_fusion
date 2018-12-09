@@ -5,7 +5,7 @@ int main(int argc, char **argv)
 {
 	ros::init(argc, argv, "DistanceFusion");
 	ros::NodeHandle node;
-	RangeFusion range_fusion_node(node, 20, 0.1f, 40.0f);
+	RangeFusion range_fusion_node(node, 20);
 
 	range_fusion_node.run();
 
