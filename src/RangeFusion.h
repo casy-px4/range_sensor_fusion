@@ -37,7 +37,7 @@ private:
 	// timing
     int _rate;
 	// low pass filter time costant
-	const static float alpha_lp = 0.2;
+	const static float _alpha_lp = 10;
 
     // topics pub/sub
     ros::Subscriber _sub_distance_middle;
@@ -56,6 +56,9 @@ private:
     // velocities in NED frame
 	float _vx;
 	float _vz;
+	// local position deltas
+	float _dx;
+	float _dz;
 	// euler angles
 	double _pitch;
 	double _roll;
@@ -67,16 +70,18 @@ private:
 
     #pragma region methods
 
+	void _main();
+
 	// topic callbacks
-    void _read_distance_middle(const sensor_msgs::Range::ConstPtr& msg);
+	void _read_distance_middle(const sensor_msgs::Range::ConstPtr& msg);
 	void _read_distance_forward(const sensor_msgs::Range::ConstPtr& msg);
 	void _read_distance_backward(const sensor_msgs::Range::ConstPtr& msg);
 	void _read_velocity(const geometry_msgs::TwistStamped::ConstPtr& msg);
 	void _read_pose(const geometry_msgs::PoseStamped::ConstPtr& msg);
 
-	void _main();
-
+	// utils
 	float _dist_point_rect(float px, float py, float m, float q);
+	void _low_pass_filter(float in, float* out, float time_const);
 
 	#pragma endregion
 };
