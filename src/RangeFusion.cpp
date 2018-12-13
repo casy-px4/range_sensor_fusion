@@ -129,7 +129,6 @@ bool RangeFusion::_check_sensor_timeout() {
     ros::Duration delta_back = current - _last_back;
     ros::Duration delta_midd = current - _last_midd;
     ros::Duration delta_forw = current - _last_forw;
-    ROS_INFO("s:%d, n:%d", delta_back.sec, delta_back.nsec);
     if (delta_back.sec * 1e9 + delta_back.nsec > SENSOR_TIMEOUT_MS * 1e6) {
         ROS_ERROR("distance_sensor_back: Timeout!");
         return false;
