@@ -7,9 +7,6 @@ RangeFusion::RangeFusion(ros::NodeHandle& node, int rate_hz) {
     _distance_middle = 0;
     _distance_forward = 0;
     _distance_backward = 0;
-    _p0_x = 0; _p0_y = 0;
-    _p1_x = 0; _p1_y = 0;
-    _p2_x = 0; _p2_y = 0;
     // fused_distance message
     _fused_distance.range = 0;
     _fused_distance.min_range = SENSOR_RNG_MIN;
@@ -36,14 +33,17 @@ void RangeFusion::run() {
 
 void RangeFusion::_read_distance_middle(const sensor_msgs::Range::ConstPtr& msg) {
    _distance_middle = msg->range;
+   _last_midd = ros::Time::now();
 }
 
 void RangeFusion::_read_distance_forward(const sensor_msgs::Range::ConstPtr& msg) {
     _distance_forward = msg->range;
+    _last_forw = ros::Time::now();
 }
 
 void RangeFusion::_read_distance_backward(const sensor_msgs::Range::ConstPtr& msg) {
     _distance_backward = msg->range;
+    _last_back = ros::Time::now();
 }
 
 void RangeFusion::_read_velocity(const geometry_msgs::TwistStamped::ConstPtr& msg) {
@@ -64,6 +64,9 @@ void RangeFusion::_read_pose(const geometry_msgs::PoseStamped::ConstPtr& msg) {
 
 void RangeFusion::_main() {
     static float smooth_d_back = 0, smooth_d_midd = 0, smooth_d_fron = 0;
+
+    if (!_check_sensor_timeout()) 
+        return;
 
     float d_back = cos(_roll) * _distance_backward;
     float d_midd = cos(_roll) * _distance_middle;
@@ -86,47 +89,60 @@ void RangeFusion::_main() {
     float q0 = y0 - m0 * x0;
     float m1 = x2 == x1 ? 10e6 : (y2 - y1) / (x2 - x1);
     float q1 = y1 - m1 * x1;
-/*
-    x0 -= _dx; x1 -= _dx; x2 -= _dx;
-    y0 -= _dz; y1 -= _dz; y2 -= _dz;
+    float ang0 = tfDegrees(atan(m0));
+    float ang1 = tfDegrees(atan(m1));
 
-    float m_b = x0 == _p0_x ? 10e6 : (y0 - _p0_y) / (x0 - _p0_x);
-    float q_b = _p0_y - m_b * _p0_x;
-    // float m_m = x1 == _p1_x ? 10e6 : (y1 - _p1_y) / (x1 - _p1_x);
-    // float q_m = _p1_y - m_m * _p1_x;
-    float m_f = x2 == _p2_x ? 10e6 : (y2 - _p2_y) / (x2 - _p2_x);
-    float q_f = _p2_y - m_f * _p2_x;
-
-    _p0_x = x0; _p0_y = y0;
-    _p1_x = x1; _p1_y = y1;
-    _p2_x = x2; _p2_y = y2;
-
-    static float smooth_m_b = 0, smooth_q_b = 0, smooth_m_f = 0, smooth_q_f = 0;
-    _low_pass_filter(m_b, &smooth_m_b, 0.1);
-    _low_pass_filter(q_b, &smooth_q_b, 0.1);
-    _low_pass_filter(m_f, &smooth_m_f, 0.1);
-    _low_pass_filter(q_f, &smooth_q_f, 0.1);
-
-    float future_alt = _vx > 0 ? _dist_point_rect(0, 0, smooth_m_f, smooth_q_f) : _dist_point_rect(0, 0, smooth_m_b, smooth_q_b);
-*/
     float abs_vx = fabs(_vx);
+    float current_m = _vx > 0 ? m1 : m0;
+    float d = current_m < 0 ? 0 : pow(_vx * current_m, 2.0f);
 
-    float scaled_vx = abs_vx * 5;
-    float constr_vx = scaled_vx < 1 ? 1 : scaled_vx > 10 ? 10 : scaled_vx;
+    float est_alt = std::min(_dist_point_rect(0, 0, m1, q1), _dist_point_rect(0, 0, m0, q0));
+    float est_atl_w = 1 / (1 + d);
 
-    float current_alt = _vx > 0 ? _dist_point_rect(0, 0, m1, q1) : _dist_point_rect(0, 0, m0, q0);
-    float future_alt = (_vx > 0 ? smooth_d_fron : smooth_d_back) / constr_vx;
-    float avg_alt = (current_alt * (1 / abs_vx) + future_alt * abs_vx) / (abs_vx + (1 / abs_vx));
+    float pred_alt = (_vx > 0 ? smooth_d_fron : smooth_d_back) / (1 + d);
+    float pred_alt_w = d;
+
+    float avg_alt = (est_alt * est_atl_w + pred_alt * pred_alt_w) / (est_atl_w + pred_alt_w);
 
     _fused_distance.range = avg_alt;
     _pub_fused_distance.publish(_fused_distance);
 
-    // ROS_INFO("\nx0:%f y0:%f x1:%f y1:%f x2:%f y2:%f", x0, y0, x1, y1, x2, y2);
-    // ROS_INFO("\nm0:%f q0:%f m1:%f q1:%f", m0, q0, m1, q1);
-    // ROS_INFO("\nm_b:%f, q_b:%f \nm_f:%f, q_f:%f", smooth_m_b, smooth_q_b, smooth_m_f, smooth_q_f);
-    ROS_INFO("\ncurrent:%f, wgth:%f\nfuture :%f, wgth:%f", current_alt, 1 / abs_vx, future_alt, abs_vx);
-    // ROS_INFO("\n_vx:%f, d:%f", _vx, _dist_point_rect(0, 0, m_f, q_f));
-    // ROS_INFO("\nd_back:%f, smooth:%f\nd_midd:%f, smooth:%f\nd_fron:%f, smooth:%f", d_back, smooth_d_back, d_midd, smooth_d_midd, d_fron, smooth_d_fron);
+    ROS_INFO("\n \
+    ==============================================\n \
+    ang1:%.3f; q1:%.3f\n \
+    dist_forw:%.3f; dist_mid:%.3f; dist_back:%.3f; vx:%.3f\n \
+    raw_f:%.3f; raw_m:%.3f; raw_b:%.3f\n \
+    est_atl:%.3f; wgth:%.3f\n \
+    prd_alt:%.3f; wgth:%.3f\n \
+    avg:%.3f\n \
+    ==============================================",
+    ang1, q1, 
+    smooth_d_fron, smooth_d_midd, smooth_d_back, _vx, 
+    d_fron, d_midd, d_back,
+    est_alt, est_atl_w,
+    pred_alt, pred_alt_w, 
+    avg_alt);
+}
+
+bool RangeFusion::_check_sensor_timeout() {
+    ros::Time current = ros::Time::now();
+    ros::Duration delta_back = current - _last_back;
+    ros::Duration delta_midd = current - _last_midd;
+    ros::Duration delta_forw = current - _last_forw;
+    ROS_INFO("s:%d, n:%d", delta_back.sec, delta_back.nsec);
+    if (delta_back.sec * 1e9 + delta_back.nsec > SENSOR_TIMEOUT_MS * 1e6) {
+        ROS_ERROR("distance_sensor_back: Timeout!");
+        return false;
+    }
+    if (delta_midd.sec * 1e9 + delta_midd.nsec > SENSOR_TIMEOUT_MS * 1e6) {
+        ROS_ERROR("distance_sensor_midd: Timeout!");
+        return false;
+    }
+    if (delta_forw.sec * 1e9 + delta_forw.nsec > SENSOR_TIMEOUT_MS * 1e6) {
+        ROS_ERROR("distance_sensor_forw: Timeout!");
+        return false;
+    }
+    return true;
 }
 
 float RangeFusion::_dist_point_rect(float px, float py, float m, float q) {

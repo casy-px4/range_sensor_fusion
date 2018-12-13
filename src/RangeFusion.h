@@ -21,6 +21,7 @@
 #define SENSOR_POSX_BACK -0.2
 #define SENSOR_RNG_MIN 0.1
 #define SENSOR_RNG_MAX 40.0F
+#define SENSOR_TIMEOUT_MS 200
 
 class RangeFusion {
 
@@ -29,15 +30,13 @@ public:
 	void run();
 
 private:
-    #pragma region members
-
     // current NodeHandle
 	ros::NodeHandle _n;
 
 	// timing
     int _rate;
 	// low pass filter time costant
-	const static float _alpha_lp = 10;
+	const static float _alpha_lp = 15;
 
     // topics pub/sub
     ros::Subscriber _sub_distance_middle;
@@ -53,6 +52,8 @@ private:
 	float _distance_middle;
 	float _distance_forward;
 	float _distance_backward;
+	// sensor last update
+	ros::Time _last_midd, _last_forw, _last_back;
     // velocities in NED frame
 	float _vx;
 	float _vz;
@@ -63,12 +64,6 @@ private:
 	double _pitch;
 	double _roll;
 	double _yaw;
-	// terrain points: p0 -> back .. p2 -> front
-	float _p0_x, _p0_y, _p1_x, _p1_y, _p2_x, _p2_y;
-
-    #pragma endregion
-
-    #pragma region methods
 
 	void _main();
 
@@ -80,10 +75,10 @@ private:
 	void _read_pose(const geometry_msgs::PoseStamped::ConstPtr& msg);
 
 	// utils
+	bool _check_sensor_timeout();
 	float _dist_point_rect(float px, float py, float m, float q);
 	void _low_pass_filter(float in, float* out, float time_const);
 
-	#pragma endregion
 };
 
 #endif
