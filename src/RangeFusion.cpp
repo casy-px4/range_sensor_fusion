@@ -48,18 +48,12 @@ void RangeFusion::_read_distance_backward(const sensor_msgs::Range::ConstPtr& ms
 
 void RangeFusion::_read_velocity(const geometry_msgs::TwistStamped::ConstPtr& msg) {
     _vx = msg->twist.linear.x;
-    _vz = msg->twist.linear.z;
 }
 
 void RangeFusion::_read_pose(const geometry_msgs::PoseStamped::ConstPtr& msg) {
-    static float last_x = 0, last_z = 0;
     tf::Quaternion q(msg->pose.orientation.x, msg->pose.orientation.y, msg->pose.orientation.z, msg->pose.orientation.w);
     tf::Matrix3x3 m(q);
     m.getRPY(_roll, _pitch, _yaw);
-    _dx = msg->pose.position.x - last_x;
-    _dz = msg->pose.position.z - last_z;
-    last_x = msg->pose.position.x;
-    last_z = msg->pose.position.z;
 }
 
 void RangeFusion::_main() {
@@ -89,39 +83,26 @@ void RangeFusion::_main() {
     float q0 = y0 - m0 * x0;
     float m1 = x2 == x1 ? 10e6 : (y2 - y1) / (x2 - x1);
     float q1 = y1 - m1 * x1;
-    float ang0 = tfDegrees(atan(m0));
-    float ang1 = tfDegrees(atan(m1));
 
-    float abs_vx = fabs(_vx);
     float current_m = _vx > 0 ? m1 : m0;
     float d = current_m < 0 ? 0 : pow(_vx * current_m, 2.0f);
+    float static_alt = std::min(_dist_point_rect(0, 0, m1, q1), _dist_point_rect(0, 0, m0, q0));
+    float avg_alt = (static_alt + (_vx > 0 ? _distance_forward : _distance_backward) * d) / (d*d + d + 1);
+    float const_alt = avg_alt < _fused_distance.min_range ? _fused_distance.min_range : 
+        avg_alt > _fused_distance.max_range ? _fused_distance.max_range : avg_alt;
 
-    float est_alt = std::min(_dist_point_rect(0, 0, m1, q1), _dist_point_rect(0, 0, m0, q0));
-    float est_atl_w = 1 / (1 + d);
-
-    float pred_alt = (_vx > 0 ? smooth_d_fron : smooth_d_back) / (1 + d);
-    float pred_alt_w = d;
-
-    float avg_alt = (est_alt * est_atl_w + pred_alt * pred_alt_w) / (est_atl_w + pred_alt_w);
-
-    _fused_distance.range = avg_alt;
+    _fused_distance.range = const_alt;
     _pub_fused_distance.publish(_fused_distance);
 
     ROS_INFO("\n \
     ==============================================\n \
-    ang1:%.3f; q1:%.3f\n \
     dist_forw:%.3f; dist_mid:%.3f; dist_back:%.3f; vx:%.3f\n \
-    raw_f:%.3f; raw_m:%.3f; raw_b:%.3f\n \
-    est_atl:%.3f; wgth:%.3f\n \
-    prd_alt:%.3f; wgth:%.3f\n \
-    avg:%.3f\n \
+    est_atl:%.3f; d:%.3f\n \
+    alt:%.3f\n \
     ==============================================",
-    ang1, q1, 
     smooth_d_fron, smooth_d_midd, smooth_d_back, _vx, 
-    d_fron, d_midd, d_back,
-    est_alt, est_atl_w,
-    pred_alt, pred_alt_w, 
-    avg_alt);
+    static_alt, d,
+    const_alt);
 }
 
 bool RangeFusion::_check_sensor_timeout() {

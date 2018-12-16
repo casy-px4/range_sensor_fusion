@@ -56,10 +56,6 @@ private:
 	ros::Time _last_midd, _last_forw, _last_back;
     // velocities in NED frame
 	float _vx;
-	float _vz;
-	// local position deltas
-	float _dx;
-	float _dz;
 	// euler angles
 	double _pitch;
 	double _roll;
